@@ -16,7 +16,8 @@
 </head>
 <body>
 <main class="wrap">
-<header class="head"><div class="brand"><div class="logo">M</div><div><h1>Money Tracker</h1><div class="sub">Your money, clearly organised</div></div></div><div class="private">● PRIVATE ON THIS DEVICE</div></header>
+<header class="head"><div class="brand"><div class="logo">M</div><div><h1>Money Tracker</h1><div class="sub">Your money, clearly organised</div></div></div><div class="private" id="privacyStatus">● LOCAL MODE</div></header>
+<section class="card" id="accountCard" style="margin-bottom:14px"><div class="sectionhead" style="margin:0 0 10px"><div><h2>Cloud account</h2><p id="authStatus">Checking account connection…</p></div></div><form id="authForm"><div class="filters" style="margin-bottom:9px"><input id="authEmail" type="email" autocomplete="email" required placeholder="Email address"><input id="authPassword" type="password" autocomplete="current-password" minlength="6" required placeholder="Password"></div><div class="actions" style="margin:0"><button class="btn" type="submit" id="signInBtn">Sign in</button><button class="btn secondary" type="button" id="signUpBtn">Create account</button><button class="btn red hidden" type="button" id="signOutBtn">Sign out</button></div></form><div class="fine" id="authHelp" style="margin-top:9px">Signed-out records stay in this browser. Sign in to load private cloud transactions.</div></section>
 <nav class="periods" aria-label="Summary period"><button data-period="day" class="active">Day</button><button data-period="week">Week</button><button data-period="month">Month</button><button data-period="year">Year</button></nav>
 <div class="periodlabel" id="periodLabel"></div>
 <section class="grid">
@@ -42,7 +43,7 @@
 <div class="notice"><strong>Net calculation:</strong> income entries with checked boxes are counted towards net gain/loss. Unchecking an income leaves the record saved.</div>
 <div class="list" id="incomeList" style="margin-top:12px"></div>
 </div>
-<div class="notice"><strong>Privacy note:</strong> Entries stay in this browser on this device. There is no account login, cloud backup or UOB bank connection in this free version. Export CSV backups regularly. Never upload your financial backup to a public repository.</div>
+<div class="notice"><strong>Privacy note:</strong> When signed out, records stay in this browser. When signed in, records are loaded from your private Supabase account and protected by your table policies. This is manual transaction tracking, not a direct UOB/bank connection. Export CSV backups regularly and never commit backups to GitHub.</div>
 <div class="foot">Money Tracker · SGD (S$) · Not connected to your bank · Data is stored locally in your browser</div>
 </main>
 <nav class="bottom"><div class="tabs"><button class="active" data-view="dashboardView">⌂<br>Dashboard</button><button data-view="transactionsView">≡<br>Transactions</button><button data-view="incomeView">＋<br>Income</button></div></nav>
@@ -52,14 +53,22 @@
 <div class="formbuttons"><button type="button" class="btn secondary" id="cancelEntry">Cancel</button><button class="btn" type="submit">Save entry</button></div>
 </form></dialog>
 <div class="toast" id="toast" role="status"></div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
 (function(){
 'use strict';
 const KEY='money-tracker-v1';
+const SUPABASE_URL='https://woknssmrhiyxuynwjxhm.supabase.co';
+// Replace the placeholder below with your Supabase publishable key (never a service_role/secret key).
+const SUPABASE_PUBLISHABLE_KEY='PASTE_YOUR_SUPABASE_PUBLISHABLE_KEY_HERE';
+const SUPABASE_CONFIGURED=SUPABASE_PUBLISHABLE_KEY!=='PASTE_YOUR_SUPABASE_PUBLISHABLE_KEY_HERE';
+const supabaseClient=SUPABASE_CONFIGURED&&window.supabase?window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY):null;
+let currentUser=null, cloudReady=false, activeCloudUserId='__not-initialized__';
+let knownCloudIds=new Set(), syncQueue=Promise.resolve();
 const $=id=>document.getElementById(id);
 const categories={EXPENSE:['Food','Transport','Shopping','School','Bills','Entertainment','Health','Online purchases','Other'],INCOME:['Allowance','Gift','Salary','Refund','Other']};
-let entries=[];let period='day';let currentView='dashboardView';let editing=false;let toastTimer;
-try{const raw=localStorage.getItem(KEY);const parsed=raw?JSON.parse(raw):[];if(Array.isArray(parsed))entries=parsed.filter(x=>x&&x.id&&['EXPENSE','INCOME'].includes(x.type)&&Number.isFinite(Number(x.amount))&&x.date)}catch(e){entries=[]}
+function readStoredEntries(storageKey){try{const raw=localStorage.getItem(storageKey);const parsed=raw?JSON.parse(raw):[];if(Array.isArray(parsed))return parsed.filter(x=>x&&x.id&&['EXPENSE','INCOME'].includes(x.type)&&Number.isFinite(Number(x.amount))&&x.date);return []}catch(e){return []}}
+let entries=readStoredEntries(KEY);let period='day';let currentView='dashboardView';let editing=false;let toastTimer;
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const money=n=>'S$'+Number(n||0).toLocaleString('en-SG',{minimumFractionDigits:2,maximumFractionDigits:2});
 function localISO(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')}
@@ -67,7 +76,9 @@ function dateNow(){return localISO(new Date())}
 function startOfWeek(d){const x=new Date(d.getFullYear(),d.getMonth(),d.getDate());x.setDate(x.getDate()-(x.getDay()+6)%7);return x}
 function includedByPeriod(date){const d=new Date(date+'T12:00:00');const now=new Date();if(Number.isNaN(d.getTime()))return false;if(period==='day')return date===dateNow();if(period==='week'){const start=startOfWeek(now),end=new Date(start);end.setDate(end.getDate()+7);return d>=start&&d<end}if(period==='month')return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth();return d.getFullYear()===now.getFullYear()}
 function periodEntries(){return entries.filter(x=>includedByPeriod(x.date))}
-function save(){try{localStorage.setItem(KEY,JSON.stringify(entries))}catch(e){alert('Could not save in this browser. Export a CSV backup and free some browser storage.')} }
+function cacheKeyForUser(userId){return 'money-tracker-cloud-v1-'+userId}
+function storeCurrentEntries(){try{localStorage.setItem(currentUser?cacheKeyForUser(currentUser.id):KEY,JSON.stringify(entries))}catch(e){alert('Could not save in this browser. Export a CSV backup and free some browser storage.')}}
+function save(){storeCurrentEntries();if(currentUser&&cloudReady)queueCloudSync()}
 function toast(msg){const el=$('toast');el.textContent=msg;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2600)}
 function labelPeriod(){const d=new Date();if(period==='day')return 'Today · '+d.toLocaleDateString('en-SG',{weekday:'long',day:'numeric',month:'long',year:'numeric'});if(period==='week'){const s=startOfWeek(d),e=new Date(s);e.setDate(e.getDate()+6);return 'This week · '+s.toLocaleDateString('en-SG',{day:'numeric',month:'short'})+' – '+e.toLocaleDateString('en-SG',{day:'numeric',month:'short',year:'numeric'})}if(period==='month')return d.toLocaleDateString('en-SG',{month:'long',year:'numeric'});return 'Year to date · '+d.getFullYear()}
 function totals(list){const spend=list.filter(x=>x.type==='EXPENSE').reduce((s,x)=>s+Number(x.amount),0),inc=list.filter(x=>x.type==='INCOME').reduce((s,x)=>s+Number(x.amount),0),counted=list.filter(x=>x.type==='INCOME'&&x.include!==false).reduce((s,x)=>s+Number(x.amount),0);return {spend,inc,counted,net:counted-spend,expenses:list.filter(x=>x.type==='EXPENSE').length,countedCount:list.filter(x=>x.type==='INCOME'&&x.include!==false).length}}
@@ -91,8 +102,26 @@ function setView(v){currentView=v;['dashboardView','transactionsView','incomeVie
 document.querySelectorAll('[data-period]').forEach(b=>b.addEventListener('click',()=>{period=b.dataset.period;document.querySelectorAll('[data-period]').forEach(x=>x.classList.toggle('active',x===b));renderAll()}));
 document.querySelectorAll('[data-view]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.view)));
 $('addExpense').addEventListener('click',()=>openEntry(null,'EXPENSE'));$('addIncome').addEventListener('click',()=>openEntry(null,'INCOME'));$('incomeAdd2').addEventListener('click',()=>openEntry(null,'INCOME'));$('seeAll').addEventListener('click',()=>setView('transactionsView'));$('search').addEventListener('input',renderTransactions);$('filterType').addEventListener('change',renderTransactions);$('closeDialog').addEventListener('click',()=>$('entryDialog').close());$('cancelEntry').addEventListener('click',()=>$('entryDialog').close());
+
+function makeUuid(){if(window.crypto&&crypto.randomUUID)return crypto.randomUUID();const b=new Uint8Array(16);crypto.getRandomValues(b);b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;const h=Array.from(b,x=>x.toString(16).padStart(2,'0')).join('');return h.slice(0,8)+'-'+h.slice(8,12)+'-'+h.slice(12,16)+'-'+h.slice(16,20)+'-'+h.slice(20)}
+function validUuid(v){return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(v||''))}
+function parseDescription(value){const raw=String(value||'');try{const o=JSON.parse(raw);if(o&&typeof o==='object'&&typeof o.name==='string')return {name:o.name,notes:String(o.notes||'')}}catch(e){}return {name:raw,notes:''}}
+function fromCloudRow(row){const d=parseDescription(row.description);return {id:row.id,type:String(row.type).toUpperCase()==='INCOME'?'INCOME':'EXPENSE',name:d.name,amount:Number(row.amount),date:row.transaction_date,category:row.category||'Other',payment:row.payment_method||'Other',notes:d.notes,include:row.include_in_balance!==false,created:row.created_at?new Date(row.created_at).getTime():Date.now()}}
+function toCloudRow(entry,userId){if(!validUuid(entry.id))entry.id=makeUuid();return {id:entry.id,user_id:userId,transaction_date:entry.date,type:entry.type,amount:Number(entry.amount),category:entry.category||'Other',payment_method:entry.payment||'Other',description:JSON.stringify({name:String(entry.name||''),notes:String(entry.notes||'')}),include_in_balance:entry.type==='INCOME'?entry.include!==false:true,created_at:new Date(Number(entry.created)||Date.now()).toISOString()}}
+function reportCloudError(message,error){console.error(message,error);toast(message+' Browser copy retained.')}
+function queueCloudSync(){const user=currentUser;if(!user||!cloudReady||!supabaseClient)return Promise.resolve();const uid=user.id;syncQueue=syncQueue.catch(()=>{}).then(async()=>{if(!currentUser||currentUser.id!==uid||!cloudReady)return;const rows=entries.map(e=>toCloudRow(e,uid));storeCurrentEntries();if(rows.length){const {error}=await supabaseClient.from('transactions').upsert(rows,{onConflict:'id'});if(error)throw error}const desired=new Set(rows.map(r=>r.id));const obsolete=[...knownCloudIds].filter(id=>!desired.has(id));if(obsolete.length){const {error}=await supabaseClient.from('transactions').delete().in('id',obsolete);if(error)throw error}knownCloudIds=desired;renderAll()}).catch(error=>reportCloudError('Cloud sync failed.',error));return syncQueue}
+function refreshAuthUI(){const signedIn=!!currentUser;$('privacyStatus').textContent=signedIn?'● CLOUD ACCOUNT':'● LOCAL MODE';$('authStatus').textContent=signedIn?'Signed in as '+currentUser.email:'Sign in to load and save your private cloud transactions.';$('signInBtn').classList.toggle('hidden',signedIn);$('signUpBtn').classList.toggle('hidden',signedIn);$('signOutBtn').classList.toggle('hidden',!signedIn);$('authEmail').classList.toggle('hidden',signedIn);$('authPassword').classList.toggle('hidden',signedIn);$('authHelp').textContent=!SUPABASE_CONFIGURED?'Setup needed: open index.html in GitHub and replace PASTE_YOUR_SUPABASE_PUBLISHABLE_KEY_HERE with your Supabase publishable key, then commit the change.':signedIn?'Your transactions are connected to this Supabase account. Signing out returns to this browser’s separate local records.':'Sign in to load cloud records. If this account has no records, you can choose whether to import the records currently saved in this browser.'}
+async function loadCloudForUser(user){cloudReady=false;knownCloudIds=new Set();$('authStatus').textContent='Loading transactions…';try{const {data,error}=await supabaseClient.from('transactions').select('*').order('transaction_date',{ascending:false}).order('created_at',{ascending:false});if(error)throw error;if(!currentUser||currentUser.id!==user.id)return;const remoteRows=Array.isArray(data)?data:[];if(remoteRows.length){entries=remoteRows.map(fromCloudRow);knownCloudIds=new Set(entries.map(x=>x.id));cloudReady=true;storeCurrentEntries();renderAll();toast('Cloud transactions loaded');return}
+const localSnapshot=readStoredEntries(KEY);if(localSnapshot.length&&confirm('This Supabase account has no transactions yet. Import '+localSnapshot.length+' existing record(s) from this browser into this account? Choose Cancel to keep the local records separate.')){entries=localSnapshot.map(x=>({...x,id:validUuid(x.id)?x.id:makeUuid()}));cloudReady=true;storeCurrentEntries();await queueCloudSync();renderAll();toast('Local records imported to cloud')}else{entries=[];cloudReady=true;storeCurrentEntries();renderAll();toast('Cloud account ready; no transactions loaded')}}catch(error){cloudReady=false;entries=[];renderAll();$('authStatus').textContent='Could not load cloud transactions.';reportCloudError('Could not load cloud transactions.',error)}}
+async function applySession(session){const user=session&&session.user?session.user:null;const nextId=user?user.id:null;if(nextId===activeCloudUserId)return;activeCloudUserId=nextId;currentUser=user;cloudReady=false;knownCloudIds=new Set();refreshAuthUI();if(!user){entries=readStoredEntries(KEY);renderAll();return}if(!supabaseClient)return;await loadCloudForUser(user);refreshAuthUI()}
+function initAuth(){if(!SUPABASE_CONFIGURED||!supabaseClient){currentUser=null;cloudReady=false;refreshAuthUI();return}supabaseClient.auth.onAuthStateChange((_event,session)=>{setTimeout(()=>{applySession(session)},0)});supabaseClient.auth.getSession().then(({data,error})=>{if(error){console.error(error);$('authStatus').textContent='Could not check sign-in status.';return}applySession(data.session)}).catch(error=>{console.error(error);$('authStatus').textContent='Could not check sign-in status.'})}
+$('authForm').addEventListener('submit',async e=>{e.preventDefault();if(!supabaseClient){alert('Add your Supabase publishable key to index.html first.');return}const email=$('authEmail').value.trim(),password=$('authPassword').value;const b=$('signInBtn');b.disabled=true;try{const {error}=await supabaseClient.auth.signInWithPassword({email,password});if(error)throw error;toast('Signed in')}catch(error){alert('Sign-in failed: '+(error.message||'Check your email and password.'))}finally{b.disabled=false}});
+$('signUpBtn').addEventListener('click',async()=>{if(!supabaseClient){alert('Add your Supabase publishable key to index.html first.');return}const email=$('authEmail').value.trim(),password=$('authPassword').value;if(!email||!password){alert('Enter your email and a password of at least 6 characters first.');return}const b=$('signUpBtn');b.disabled=true;try{const {data,error}=await supabaseClient.auth.signUp({email,password,options:{emailRedirectTo:location.origin+location.pathname}});if(error)throw error;if(data.session){toast('Account created and signed in')}else{alert('Account created. Check your email confirmation link, then return here and sign in.')}}catch(error){alert('Sign-up failed: '+(error.message||'Please try again.'))}finally{b.disabled=false}});
+$('signOutBtn').addEventListener('click',async()=>{if(!supabaseClient)return;const {error}=await supabaseClient.auth.signOut();if(error)alert('Sign-out failed: '+error.message);else toast('Signed out')});
+
 if('serviceWorker' in navigator&&location.protocol.indexOf('http')===0)window.addEventListener('load',()=>navigator.serviceWorker.register('./service-worker.js').catch(()=>{}));
 renderAll();
+initAuth();
 })();
 </script>
 </body></html>
