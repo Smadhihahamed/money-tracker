@@ -1,36 +1,42 @@
 # Money Tracker
 
-A free, mobile-friendly, installable website for tracking spending and income in Singapore dollars (SGD).
+A free, mobile-friendly spending and income tracker for Singapore dollars (SGD), published with GitHub Pages.
 
 ## Features
+
 - Dashboard summaries for day, week, month and year
-- Record spending and income with a date, category, payment method and notes
-- Track PayNow, online purchases, card, cash, bank transfer and other methods
+- Record spending and income with date, category, payment method and notes
 - Include or exclude an income entry from net gain/loss without deleting it
-- Search, edit and delete entries
-- Import and export CSV files
-- Progressive Web App manifest and offline cache
+- Search, edit and delete transactions
+- Import and export CSV backups
+- Supabase email authentication and per-user cloud transaction storage (requires the setup below)
+- Local-only mode when signed out
 
-## Important limits and privacy
-- This is a local-first website. Records are saved in the current browser on the current device using browser storage.
-- It does not have user accounts, cross-device cloud sync, or a connection to UOB. Add entries manually or import a CSV file you choose.
-- It does not request bank passwords, PINs, OTPs or Singpass details.
-- Browser data can be lost if browser storage is cleared or the device is lost. Export regular CSV backups and keep the backups private.
-- The repository is public because free GitHub Pages hosting requires a public repository on GitHub Free. The app does not upload transaction records, but all source files in this repository are public. Never commit your CSV backup or real financial data.
+## Supabase setup
 
-## Publish with free GitHub Pages
-A workflow is included at `.github/workflows/deploy.yml`.
+Before sign-in and cloud syncing will work:
 
-1. Open **Settings** for this repository.
-2. Select **Pages** in the sidebar.
-3. Under **Build and deployment**, set **Source** to **GitHub Actions**.
-4. Open the **Actions** tab and wait for **Deploy Money Tracker to GitHub Pages** to finish successfully.
-5. The site should then be available at https://smadhihahamed.github.io/money-tracker/
+1. Open `index.html` in this repository and edit the file.
+2. Find `PASTE_YOUR_SUPABASE_PUBLISHABLE_KEY_HERE` and replace only that placeholder with the project's **publishable** key from Supabase Project Settings → API Keys. Never use a `service_role`, secret, or database password in frontend code.
+3. Commit the change to `main`, then wait for the GitHub Pages workflow to deploy.
+4. In Supabase Authentication → URL Configuration, set the Site URL to `https://smadhihahamed.github.io/money-tracker/` and add `https://smadhihahamed.github.io/money-tracker/**` to the allowed Redirect URLs.
+5. Confirm email sign-in is enabled in Authentication providers.
+6. The database must have a `public.transactions` table with `id` (uuid), `user_id` (uuid), `transaction_date` (date), `type` (text), `amount` (numeric), `category` (text), `payment_method` (text), `description` (text), `include_in_balance` (boolean), and `created_at` (timestamptz), with RLS enabled and authenticated-user policies for select, insert, update and delete that check `auth.uid() = user_id`.
 
-The automatic workflow re-deploys the site when new commits are pushed to `main`.
+When signing in to an account with no saved cloud transactions, the app asks whether to import the records already stored in the current browser. Declining keeps those local records separate. Once signed in, changes are synced to that user's cloud table and protected by RLS.
 
-## Install on Android
-1. Open the published website in Chrome on your Android device.
-2. Use Chrome's menu and choose **Install app** or **Add to Home screen** if offered.
+## Privacy and limits
 
-This is an installable website (PWA), not a Google Play Store listing or a native Android APK.
+- This app does **not** connect directly to UOB or any other bank. You record transactions manually or import a CSV you choose.
+- Do not enter bank passwords, PINs, OTPs or Singpass details into this app.
+- The project repository is public. Never commit CSV backups, transaction records, passwords, or secret/service-role keys.
+- The Supabase publishable key is intended for frontend use, but data security depends on correct RLS policies. Do not disable RLS.
+
+## Publish with GitHub Pages
+
+1. Open repository **Settings** → **Pages**.
+2. Set **Build and deployment → Source** to **GitHub Actions**.
+3. Open **Actions** and confirm the **Deploy Money Tracker to GitHub Pages** workflow finishes successfully.
+4. The site is available at https://smadhihahamed.github.io/money-tracker/.
+
+Changes pushed to `main` re-trigger the deployment workflow.
