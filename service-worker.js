@@ -1,4 +1,4 @@
-const CACHE_NAME = 'money-tracker-static-v6';
+const CACHE_NAME = 'money-tracker-static-v7';
 const FILES = [
   './',
   './index.html',
