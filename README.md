@@ -40,3 +40,5 @@ When signing in to an account with no saved cloud transactions, the app asks whe
 4. The site is available at https://smadhihahamed.github.io/money-tracker/.
 
 Changes pushed to `main` re-trigger the deployment workflow.
+
+The signed-in/local status badge remains visible on narrow mobile screens so the user can confirm whether cloud mode is active.
