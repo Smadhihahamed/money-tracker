@@ -10,6 +10,7 @@ A free, mobile-friendly spending and income tracker for Singapore dollars (SGD),
 - Search, edit and delete transactions
 - Import and export CSV backups
 - Import compatible bank-statement CSVs with a preview, date interpretation and duplicate skipping (manual import only)
+- Download a demo-only bank-statement CSV to test import without real financial data
 - Supabase email authentication and per-user cloud transaction storage (requires the setup below)
 - Local-only mode when signed out
 
