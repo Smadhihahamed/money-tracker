@@ -1,0 +1,2 @@
+[functions.uob-connection-status]
+verify_jwt = true
