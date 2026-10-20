@@ -35,6 +35,21 @@ When signing in to an account with no saved cloud transactions, the app asks whe
 - The project repository is public. Never commit CSV backups, transaction records, passwords, or secret/service-role keys.
 - The Supabase publishable key is intended for frontend use, but data security depends on correct RLS policies. Do not disable RLS.
 
+
+## UOB bank integration status
+
+The repository now includes a **status-only Supabase Edge Function scaffold** at `supabase/functions/uob-connection-status/index.ts`. It checks that the caller has a valid Money Tracker Supabase session, then reports `not_configured`. It does **not** contact UOB, return balances, or retrieve transactions. GitHub Pages does not deploy Supabase Edge Functions automatically; this scaffold must be reviewed and deployed separately before the app can call it.
+
+### Before any live bank connection
+
+1. Confirm with UOB that the account and personal-app use case are eligible. UOB's Singapore API page says API services are for corporate (non-individual) clients, so a personal account may not qualify.
+2. Register through the official [UOB API Developer Portal](https://developers.uobgroup.com/en/get-started), test only with the official sandbox, and request production access if UOB confirms eligibility.
+3. Do not add UOB client secrets, API keys, certificates, bank passwords, PINs, OTPs or Singpass details to `index.html`, GitHub, or browser storage.
+4. Only after UOB approval, implement the exact documented authorization and Accounts API flow in a server-side function. Store provider secrets as server-side secrets, enforce user ownership, request only necessary permissions, protect tokens, and handle revocation and errors.
+5. Deploy and test the backend independently. Until then, the app must continue to say that live UOB bank sync is **not connected**; use manual entries or statement CSV import.
+
+Official references: [UOB API Services (Singapore)](https://www.uob.com.sg/business/digital/uob-api-services.page), [UOB API documentation](https://developers.uobgroup.com/en/apis-documentation), and [UOB developer terms](https://developers.uobgroup.com/en/?format=raw&option=com_apiportal&view=terms).
+
 ## Publish with GitHub Pages
 
 1. Open repository **Settings** → **Pages**.
