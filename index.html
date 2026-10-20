@@ -139,7 +139,7 @@ $('authForm').addEventListener('submit',async e=>{e.preventDefault();if(!supabas
 $('signUpBtn').addEventListener('click',async()=>{if(!supabaseClient){alert('Add your Supabase publishable key to index.html first.');return}const email=$('authEmail').value.trim(),password=$('authPassword').value;if(!email||!password){alert('Enter your email and a password of at least 6 characters first.');return}const b=$('signUpBtn');b.disabled=true;try{const {data,error}=await supabaseClient.auth.signUp({email,password,options:{emailRedirectTo:location.origin+location.pathname}});if(error)throw error;if(data.session){toast('Account created and signed in')}else{alert('Account created. Check your email confirmation link, then return here and sign in.')}}catch(error){alert('Sign-up failed: '+(error.message||'Please try again.'))}finally{b.disabled=false}});
 $('signOutBtn').addEventListener('click',async()=>{if(!supabaseClient)return;const {error}=await supabaseClient.auth.signOut();if(error)alert('Sign-out failed: '+error.message);else toast('Signed out')});
 
-if('serviceWorker' in navigator&&location.protocol.indexOf('http')===0)window.addEventListener('load',()=>navigator.serviceWorker.register('./service-worker.js').catch(()=>{}));
+if('serviceWorker' in navigator&&location.protocol.indexOf('http')===0){let reloadedForWorkerUpdate=false;navigator.serviceWorker.addEventListener('controllerchange',()=>{if(reloadedForWorkerUpdate)return;reloadedForWorkerUpdate=true;window.location.reload()});window.addEventListener('load',()=>navigator.serviceWorker.register('./service-worker.js').catch(()=>{}))}
 renderAll();
 initAuth();
 })();
